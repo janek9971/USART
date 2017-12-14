@@ -38,9 +38,9 @@ void __init3( void )
 }
 
 int main(void) {
-	 DDRB = 255;
-	 DDRC = 255;
-	 DDRD = 255;
+	// DDRB = 255;
+	// DDRC = 255;
+	// DDRD = 255;
 
 	/* latch=eeprom_read_byte((uint8_t*)5);
 	 uart_putint(latch,5);

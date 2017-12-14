@@ -11,9 +11,9 @@
 #define PORT    PORTB
 #define PIN     PINB
 
- unsigned char RESET_PULSE( void );
-int8_t startMeas(int count);
-unsigned char read_byte(void) ;
+// unsigned char RESET_PULSE( void );
+//int8_t startMeas(int count);
+//unsigned char read_byte(void) ;
 void send_byte(char wartosc, uint8_t portAddress, uint8_t pinNumber)  ;
 unsigned char read(uint8_t portAddress, uint8_t pinNumber) ;
 void send(char bit, uint8_t portAddress, uint8_t pinNumber );

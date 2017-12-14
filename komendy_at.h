@@ -25,11 +25,9 @@ typedef struct {
 
 // deklaracje zmiennych zewnêtrznych
 extern TATCMD polecenia_at[] PROGMEM;
-extern uint8_t portAddress;
-extern uint8_t pinNumber;
-extern int addr;
-extern int addr2;
-extern int addr3;
+//extern uint8_t portAddress;
+//extern uint8_t pinNumber;
+
 
 // deklaracje funkcji
 void parse_uart_data(char * pBuf);
@@ -38,7 +36,7 @@ int8_t comm_to_send_byte(uint8_t inout, char * params);
 int8_t comm_to_read_byte(uint8_t inout, char * params);
 int8_t ports_control(uint8_t inout, char * params);
 int8_t rst_service(uint8_t inout, char * params);
-int8_t reset_pulse(uint8_t inout, char * params);
+//int8_t reset_pulse(uint8_t inout, char * params);
 int8_t measurment(uint8_t inout, char * params);
 int8_t test(uint8_t inout, char * params);
 int8_t stop(uint8_t inout, char * params);

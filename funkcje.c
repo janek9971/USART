@@ -15,7 +15,7 @@
 #include "komendy_at.h"
 #include "uart.h"
 
-char buf[8];
+//char buf[8];
 volatile uint32_t timerCount = 0;
 unsigned char read(uint8_t portAddress, uint8_t pinNumber) {
 	unsigned char PRESENCE = 0;
@@ -32,7 +32,7 @@ unsigned char read(uint8_t portAddress, uint8_t pinNumber) {
 
 	return (PRESENCE);
 }
-unsigned char RESET_PULSE(void) {
+/*unsigned char RESET_PULSE(void) {
 	unsigned char PRESENCE = -1;
 
 	cbi2(4, 0);
@@ -54,7 +54,7 @@ unsigned char RESET_PULSE(void) {
 
 	return PRESENCE;
 
-}
+}*/
 
 void send(unsigned char bit, uint8_t portAddress, uint8_t pinNumber) {
 
@@ -69,19 +69,19 @@ void send(unsigned char bit, uint8_t portAddress, uint8_t pinNumber) {
 
 void send_byte(unsigned char wartosc, uint8_t portAddress, uint8_t pinNumber) {
 	unsigned char i;
-	unsigned char pom;
+	unsigned char temp;
 
 	for (i = 0; i < 8; i++) {
-		pom = wartosc >> i;
-		pom &= 0x01;
-		send(pom, portAddress, pinNumber);
+		temp = wartosc >> i;
+		temp &= 0x01;
+		send(temp, portAddress, pinNumber);
 	}
-	dtostrf(wartosc, 1, 1, buf);
-	uart_puts(buf);
+	//dtostrf(wartosc, 1, 1, buf);
+//	uart_puts(buf);
 	_delay_us(100);
 }
 
-unsigned char read_byte(void) {
+/*unsigned char read_byte(void) {
 	unsigned char i;
 	unsigned char wartosc = 0;
 
@@ -92,9 +92,9 @@ unsigned char read_byte(void) {
 
 	}
 	return (wartosc);
-}
+}*/
 
-int8_t startMeas(int count) {
+/*int8_t startMeas(int count) {
 	unsigned char sprawdz;
 	int i;
 	uint8_t licznik = 1;
@@ -139,7 +139,7 @@ int8_t startMeas(int count) {
 	}
 
 	return 0;
-}
+}*/
 
 void init_timer() {
 	TCNT1 = timerCount;
