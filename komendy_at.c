@@ -9,33 +9,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <util/delay.h>
-
 #include "uart.h"
-
 #include "funkcje.h"
 #include "komendy_at.h"
 #include <stdbool.h>
 #include <avr/eeprom.h>
-#define AT_CNT     10  // iloæ poleceñ AT
 
 char * paramsPointer;
-
 int addr = 1, addr2 = 2, addr3 = 3, tempCount = 0, readbuf[9], globalStop = 0,
 		period = 0, readValue = 0;
 char sensorValue;
-
 bool state;
 char temp1 = 0, temp2 = 0;
-int readtime=1;
-//----------- tablica z poleceniami AT i wskaŸnikami funkcji do ich obs³ugi --------------------
-const TATCMD polecenia_at[AT_CNT] PROGMEM
-= {
-// { at_cmd } , { wskaŸnik do funkcji obs³ugi at },
-		{ "SENDBYTE", comm_to_send_byte }, { "READBYTE", comm_to_read_byte }, {
-				"RST", rst_service }, { "PORTS", ports_control },
-		{ "STOP", stop }, { "SAVEM", save_eeprom }, { "RST+MEM",
-				rst_service_cleareeprom }, { "READM", read_eeprom }, { "PIN",
-				port_control }, { "WAIT", comm_to_wait }, };
+int readtime = 1;
+bool correct = true;
+
+#define CMD_CNT   10 // iloæ poleceñ
+//----------- tablica z poleceniami i wskaŸnikami funkcji do ich obs³ugi --------------------
+const CMD comm[CMD_CNT] PROGMEM = { { "TEST", testing_comm }, { "SENDBYTE",
+		comm_to_send_byte }, { "READBYTE", comm_to_read_byte }, { "RST",
+		rst_service }, { "PORTS", ports_control }, { "SAVEM", save_eeprom }, {
+		"RST+MEM", rst_service_cleareeprom }, { "READM", read_eeprom }, { "PIN",
+		port_control }, { "WAIT", comm_to_wait }, };
 
 //----------------- funkcja do analizowania danych odebranych z UART ------------------------------
 void parse_uart_data(char * pBuf) {
@@ -44,7 +39,7 @@ void parse_uart_data(char * pBuf) {
 
 	char * cmd_wsk;
 
-	char * reszta;
+	char * rest;
 	uint8_t i = 0, len;
 
 	if (strpbrk(pBuf, "=?")) {
@@ -53,22 +48,18 @@ void parse_uart_data(char * pBuf) {
 		if (strpbrk(pBuf, "?")) {
 			// zapytania do uk³adu w postaci: AT+CMD?
 
-			cmd_wsk = strtok_r(pBuf, "?", &reszta);
+			cmd_wsk = strtok_r(pBuf, "?", &rest);
 			len = strlen(cmd_wsk);
-			for (i = 0; i < AT_CNT; i++) {
-				if (len
-						&& 0
-								== strncasecmp_P(cmd_wsk,
-										polecenia_at[i].polecenie_at, len)) {
-					if (pgm_read_word(polecenia_at[i].polecenie_at)) {
-						_at_srv = (void *) pgm_read_word(
-								&polecenia_at[i].at_service);
+			for (i = 0; i < CMD_CNT; i++) {
+				if (len && 0 == strncasecmp_P(cmd_wsk, comm[i].command, len)) {
+					if (pgm_read_word(comm[i].command)) {
+						_at_srv = (void *) pgm_read_word(&comm[i].comm_service);
 						if (_at_srv) {
-							if (_at_srv(0, reszta) < 0)
-								uart_puts("ERROR\r\n");
+							if (_at_srv(0, rest) < 0)
+								uart_puts("UNKNOWN COMMAND\r\n");
 						}
 					}
-					uart_puts("\r\n");
+					uart_puts("SUCCESS!\r\n");
 					break;
 				}
 			}
@@ -76,37 +67,32 @@ void parse_uart_data(char * pBuf) {
 		} else {
 			// ustawienia uk³adu w postaci: AT+CMD=parametry
 
-			cmd_wsk = strtok_r(pBuf, "=", &reszta);
+			cmd_wsk = strtok_r(pBuf, "=", &rest);
 
 			len = strlen(cmd_wsk);
-			for (i = 0; i < AT_CNT; i++) {
-				if (len
-						&& 0
-								== strncasecmp_P(cmd_wsk,
-										polecenia_at[i].polecenie_at, len)) {
-					if (pgm_read_word(polecenia_at[i].polecenie_at)) {
-						_at_srv = (void *) pgm_read_word(
-								&polecenia_at[i].at_service);
-						if (_at_srv && !_at_srv(1, reszta)) {
+			for (i = 0; i < CMD_CNT; i++) {
+				if (len && 0 == strncasecmp_P(cmd_wsk, comm[i].command, len)) {
+					if (pgm_read_word(comm[i].command)) {
+						_at_srv = (void *) pgm_read_word(&comm[i].comm_service);
+						if (_at_srv && !_at_srv(1, rest)) {
 							if (strcmp(cmd_wsk, "READBYTE") == 0) {
 
-
-
-							}else if(strcmp(cmd_wsk, "SENDBYTE") == 0){
-								cmd_wsk = strtok_r(0, ",", &reszta);
+							} else if (strcmp(cmd_wsk, "SENDBYTE")
+									== 0&& correct!=false) {
+								cmd_wsk = strtok_r(0, ",", &rest);
 								uart_puts("SENDING: ");
 								uart_puts(cmd_wsk);
 								uart_puts("\r\n");
 
 							}
 
-
 							else {
-
-								uart_puts("OK\r\n");
+								if (correct == true)
+									uart_puts("SUCCESS!\r\n");
+								correct = true;
 							}
 						} else {
-							uart_puts("ERROR\r\n");
+							uart_puts("UNKNOWN COMMAND\r\n");
 						}
 					}
 					break;
@@ -116,11 +102,17 @@ void parse_uart_data(char * pBuf) {
 
 	}
 
-	if ( AT_CNT == i)
-		uart_puts("ERROR\r\n");
+	if ( CMD_CNT == i)
+		uart_puts("UNKNOWN COMMAND\r\n");
 }
 
-//----------------- obs³uga poszczególnych komend AT ----------------------------------
+//----------------- obs³uga poszczególnych komend ----------------------------------
+int8_t testing_comm(uint8_t inout, char * params) {
+
+	uart_puts("OK!\r\n");
+	correct = true;
+	return 0;
+}
 int8_t comm_to_send_byte(uint8_t inout, char * params) {
 	uint8_t portAddress = 0, pinNumber;
 
@@ -128,9 +120,9 @@ int8_t comm_to_send_byte(uint8_t inout, char * params) {
 	char * dane = paramsPointer;
 	unsigned char parsedData = 0;
 	paramsPointer = strtok(0, ",");
-	if (atoi(paramsPointer) != 0) {
-		portAddress = atoi(paramsPointer);
-	} else if (strcmp(paramsPointer, "DDRB") == 0) {
+
+	portAddress = atoi(paramsPointer);
+	if (strcmp(paramsPointer, "DDRB") == 0) {
 		portAddress = 4;
 	} else if (strcmp(paramsPointer, "DDRC") == 0) {
 		portAddress = 7;
@@ -138,10 +130,17 @@ int8_t comm_to_send_byte(uint8_t inout, char * params) {
 		portAddress = 10;
 
 	} else {
-		uart_puts("ERROR");
+		correct = false;
+
 	}
 	paramsPointer = strtok(0, ",");
+	if (strcmp(paramsPointer, "") == 0) {
+		correct = false;
+	}
 	pinNumber = atoi(paramsPointer);
+	if (pinNumber < 0 || pinNumber > 7) {
+		correct = false;
+	}
 	if (strchr(dane, 'b') != NULL) {
 		parsedData = (unsigned char) strtoul(dane, NULL, 2);
 	} else if (strchr(dane, 'x') != NULL || strchr(dane, 'X') != NULL) {
@@ -149,10 +148,15 @@ int8_t comm_to_send_byte(uint8_t inout, char * params) {
 	} else if (atoi(dane) != 0) {
 		parsedData = (unsigned char) strtoul(dane, NULL, 10);
 	} else {
-		uart_puts("ERROR");
+		correct = false;
+
 	}
-	if (256 - parsedData)
+	if (correct != false) {
+
 		send_byte((unsigned char) parsedData, portAddress, pinNumber);
+	} else {
+		uart_puts("INVALID PARAMETERS\r\n");
+	}
 
 	return 0;
 }
@@ -167,32 +171,43 @@ int8_t comm_to_read_byte(uint8_t inout, char * params) {
 	unsigned char i;
 	unsigned char value = 0;
 	paramsPointer = strtok(params, ",");
-	if (atoi(paramsPointer) != 0) {
-		portAddress = atoi(paramsPointer);
-	} else if (strcmp(paramsPointer, "DDRB") == 0) {
+
+	portAddress = atoi(paramsPointer);
+	if (strcmp(paramsPointer, "DDRB") == 0) {
 		portAddress = 4;
 	} else if (strcmp(paramsPointer, "DDRC") == 0) {
 		portAddress = 7;
 	} else if (strcmp(paramsPointer, "DDRD") == 0) {
 		portAddress = 10;
 	} else {
-		uart_puts("ERROR");
+		correct = false;
+
 	}
 
 	paramsPointer = strtok(0, ",");
-	pinNumber = atoi(paramsPointer);
-
-	for (i = 0; i < 8; i++) {
-		if (read(portAddress, pinNumber))
-			value |= 0x01 << i;
-		_delay_us(15);
-
+	if (strcmp(paramsPointer, "") == 0) {
+		correct = false;
 	}
-	readbuf[tempCount] = value;
-	uart_puts("READED_VALUE: ");
-	uart_putint(readbuf[tempCount], 10);
-	uart_puts("\r\n");
-	tempCount++;
+	pinNumber = atoi(paramsPointer);
+	if (pinNumber < 0 || pinNumber > 7) {
+		correct = false;
+	}
+	if (correct != false) {
+		for (i = 0; i < 8; i++) {
+			if (read(portAddress, pinNumber))
+				value |= 0x01 << i;
+			_delay_us(15);
+
+		}
+		readbuf[tempCount] = value;
+		uart_puts("READED_VALUE: ");
+		uart_putint(readbuf[tempCount], 10);
+		uart_puts("\r\n");
+		tempCount++;
+	} else {
+		uart_puts("INVALID PARAMETERS\r\n");
+	}
+
 	return 0;
 }
 
@@ -202,7 +217,6 @@ int8_t rst_service(uint8_t inout, char * params) {
 
 	_delay_ms(200);
 
-	//****** RESET UK£ADU NA POTRZEBY BOOTLOADERA (MkBootloader) ***********
 	cli();
 	// wy³¹cz przerwania
 	wdt_enable(0);// ustaw watch-dog
@@ -219,7 +233,6 @@ int8_t rst_service_cleareeprom(uint8_t inout, char * params) {
 
 	_delay_ms(200);
 
-	//****** RESET UK£ADU NA POTRZEBY BOOTLOADERA (MkBootloader) ***********
 	cli();
 	// wy³¹cz przerwania
 
@@ -236,49 +249,6 @@ int8_t rst_service_cleareeprom(uint8_t inout, char * params) {
 
 	return 0;
 }
-
-/*int8_t reset_pulse(uint8_t inout, char * params) {
- uint8_t portAddress = 0, pinNumber;
- paramsPointer = strtok(params, ",");
- if (atoi(paramsPointer) != 0) {
- portAddress = atoi(paramsPointer);
- } else if (strcmp(paramsPointer, "DDRB") == 0) {
- portAddress = 4;
- } else if (strcmp(paramsPointer, "DDRC") == 0) {
- portAddress = 7;
- } else if (strcmp(paramsPointer, "DDRD") == 0) {
- portAddress = 10;
- } else {
- uart_puts("ERROR");
- }
-
- paramsPointer = strtok(0, ",");
- pinNumber = atoi(paramsPointer);
- cbi2(portAddress, pinNumber);
- _delay_us(500);
- sbi2(portAddress, pinNumber);
- _delay_us(30);
-
- return 0;
-
- }*/
-
-/*int8_t measurment(uint8_t inout, char * params) {
-
- uint8_t count;
-
- paramsPointer = strtok(params, ",");
- portAddress = atoi(paramsPointer);
- paramsPointer = strtok(0, ",");
- pinNumber = atoi(paramsPointer);
- paramsPointer = strtok(0, ",");
- count = atoi(paramsPointer);
-
- startMeas(count);
-
- return 0;
-
- }*/
 
 int8_t ports_control(uint8_t inout, char * params) {
 
@@ -300,7 +270,6 @@ int8_t ports_control(uint8_t inout, char * params) {
 	binaryPortB = strtoul(asciiPortB, NULL, 2);
 	binaryPortC = strtoul(asciiPortC, NULL, 2);
 	binaryPortD = strtoul(asciiPortD, NULL, 2);
-
 	binaryPortB = revBits(binaryPortB);
 	binaryPortC = revBits(binaryPortC);
 	binaryPortD = revBits(binaryPortD);
@@ -333,6 +302,12 @@ int8_t ports_control(uint8_t inout, char * params) {
 			}
 
 		}
+	} else {
+		correct = false;
+
+	}
+	if(correct==false){
+		uart_puts("INVALID PARAMETERS\r\n");
 	}
 	return 0;
 
@@ -344,10 +319,7 @@ int8_t port_control(uint8_t inout, char * params) {
 	uint8_t portAddress = 0, pinNumber;
 	paramsPointer = strtok(params, ",");
 
-	if (atoi(paramsPointer) != 0) {
-
-		portAddress = atoi(paramsPointer);
-	} else if (strcmp(paramsPointer, "DB") == 0) {
+	if (strcmp(paramsPointer, "DB") == 0) {
 		portAddress = 4;
 
 	} else if (strcmp(paramsPointer, "DC") == 0) {
@@ -364,30 +336,39 @@ int8_t port_control(uint8_t inout, char * params) {
 	} else if (strcmp(paramsPointer, "PD") == 0) {
 
 		portAddress = 11;
-
 	} else {
-		uart_puts("ERROR");
+		correct = false;
 	}
+
 	paramsPointer = strtok(0, ",");
+	if (strcmp(paramsPointer, "") == 0) {
+		correct = false;
+	}
 	pinNumber = atoi(paramsPointer);
 	paramsPointer = strtok(0, ",");
+	if (strcmp(paramsPointer, "") == 0) {
+		correct = false;
+	}
 	pinstate = atoi(paramsPointer);
-
-	if (pinstate == 1) {
-		cbi2(portAddress, pinNumber);
-
-	} else if (pinstate == 0) {
-		sbi2(portAddress, pinNumber);
-
+	if (pinNumber < 0 || pinNumber > 7) {
+		correct = false;
 	}
 
+	if (pinstate == 1) {
+		setbit(portAddress, pinNumber);
+
+	} else if (pinstate == 0) {
+		clearbit(portAddress, pinNumber);
+
+	} else {
+		correct = false;
+
+	}
+	if (correct == false) {
+		uart_puts("INVALID PARAMETERS\r\n");
+	}
 	return 0;
 
-}
-int8_t stop(uint8_t inout, char * params) {
-	globalStop = 1;
-	uart_puts("stop");
-	return 0;
 }
 
 int8_t save_eeprom(uint8_t inout, char * params) {
@@ -415,31 +396,52 @@ int8_t save_eeprom(uint8_t inout, char * params) {
 }
 
 int8_t read_eeprom(uint8_t inout, char * params) {
+	int j = 0;
 
 	readValue = (char) eeprom_read_byte((uint8_t*) addr);
-
-	DDRB = readValue;
-
+	if (readValue == 0) {
+		j++;
+	} else {
+		DDRB = readValue;
+	}
 	readValue = 0;
 	readValue = (char) eeprom_read_byte((uint8_t*) (addr + 1));
-	DDRC = readValue;
-
+	if (readValue == 0) {
+		j++;
+	} else {
+		DDRC = readValue;
+	}
 	readValue = 0;
 	readValue = (char) eeprom_read_byte((uint8_t*) (addr + 2));
-	DDRD = readValue;
-
+	if (readValue == 0) {
+		j++;
+	} else {
+		DDRD = readValue;
+	}
 	readValue = 0;
 	readValue = (char) eeprom_read_byte((uint8_t*) (addr + 3));
-	PORTB = readValue;
-
+	if (readValue == 0) {
+		j++;
+	} else {
+		PORTB = readValue;
+	}
 	readValue = 0;
 	readValue = (char) eeprom_read_byte((uint8_t*) (addr + 4));
-	PORTC = readValue;
-
+	if (readValue == 0) {
+		j++;
+	} else {
+		PORTC = readValue;
+	}
 	readValue = 0;
 	readValue = (char) eeprom_read_byte((uint8_t*) (addr + 5));
-	PORTD = readValue;
-
+	if (readValue == 0) {
+		j++;
+	} else {
+		PORTD = readValue;
+	}
+	if (j == 6) {
+		uart_puts("NO SAVED DATA");
+	}
 	readValue = 0;
 
 	return 0;
@@ -458,6 +460,16 @@ int8_t comm_to_wait(uint8_t inout, char * params) {
 		while (timeToWait--) {
 			_delay_ms(1);  // one millisecond
 		}
+
+	} else if (option == 1) {
+		while (timeToWait--) {
+			_delay_us(1);  // one microsecond
+		}
+	}
+
+	else {
+		correct = false;
+		uart_puts("INVALID\r\n");
 
 	}
 

@@ -9,173 +9,148 @@
 #include <stdlib.h>
 #include <util/delay.h>
 #include <util/atomic.h>
-
 #include "uart.h"
 
 volatile uint8_t ascii_line;
 
-
-// definiujemy w koñcu nasz bufor UART_RxBuf
 volatile char UART_RxBuf[UART_RX_BUF_SIZE];
-// definiujemy indeksy okreœlaj¹ce iloœæ danych w buforze
-volatile uint8_t UART_RxHead; // indeks oznaczaj¹cy „g³owê wê¿a”
-volatile uint8_t UART_RxTail; // indeks oznaczaj¹cy „ogon wê¿a”
 
+volatile uint8_t UART_RxHead;
+volatile uint8_t UART_RxTail;
 
-
-// definiujemy w koñcu nasz bufor UART_RxBuf
 volatile char UART_TxBuf[UART_TX_BUF_SIZE];
-// definiujemy indeksy okreœlaj¹ce iloœæ danych w buforze
-volatile uint8_t UART_TxHead; // indeks oznaczaj¹cy „g³owê wê¿a”
-volatile uint8_t UART_TxTail; // indeks oznaczaj¹cy „ogon wê¿a”
+volatile uint8_t UART_TxHead;
+volatile uint8_t UART_TxTail;
 
+// zdarzenie UART_RX_STR_()
+static void (*uart_rx_str_event_callback)(char * pBuf);
 
-// wskaŸnik do funkcji callback dla zdarzenia UART_RX_STR_()
-static void ( *uart_rx_str_event_callback )( char * pBuf );
-
-
-// funkcja do rejestracji funkcji zwrotnej w zdarzeniu UART_RX_STR_EVENT()
-void register_uart_str_rx_event_callback( void ( *callback )( char * pBuf ) ) {
-    uart_rx_str_event_callback = callback;
+//rejestracja funkcji zwrotnej w zdarzeniu UART_RX_STR_EVENT()
+void register_uart_str_rx_event_callback(void (*callback)(char * pBuf)) {
+	uart_rx_str_event_callback = callback;
 }
-
 
 // Zdarzenie do odbioru danych ³añcucha tekstowego z bufora cyklicznego
-void UART_RX_STR_EVENT( char * rbuf ) {
+void UART_RX_STR_EVENT(char * rbuf) {
 
-    if ( ascii_line ) {
-        if ( uart_rx_str_event_callback ) {
-            uart_get_str( rbuf );
-            ( *uart_rx_str_event_callback )( rbuf );
-        } else {
-            UART_RxHead = UART_RxTail;
-        }
-    }
+	if (ascii_line) {
+		if (uart_rx_str_event_callback) {
+			uart_get_str(rbuf);
+			(*uart_rx_str_event_callback)(rbuf);
+		} else {
+			UART_RxHead = UART_RxTail;
+		}
+	}
 }
 
-
-
-void USART_Init( uint16_t ubrr ) {
-    /*Set baud rate */
-    UBRR0H = ( uint8_t )( ubrr >> 8 );
-    UBRR0L = ( uint8_t )ubrr;
-    UCSR0B = ( 1 << RXEN0 ) | ( 1 << TXEN0 ) | ( 1 << RXCIE0 );
-    /* Set frame format: 8data, 1stop bit */
-    UCSR0C = ( 3 << UCSZ00 );
+void USART_Init(uint16_t ubrr) {
+	/*Set baud rate */
+	UBRR0H = (uint8_t) (ubrr >> 8);
+	UBRR0L = (uint8_t) ubrr;
+	UCSR0B = (1 << RXEN0) | (1 << TXEN0) | (1 << RXCIE0);
+	/* Set frame format: 8data, 1stop bit */
+	UCSR0C = (3 << UCSZ00);
 }
 
+// definiujemy funkcjê dodaj¹c¹ jeden bajt doz bufora cyklicznego
+void uart_putc(char data) {
+	uint8_t tmp_head;
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+	{
+		tmp_head = (UART_TxHead + 1) & UART_TX_BUF_MASK;
+	}
+	while (tmp_head == UART_TxTail) {
+	}
 
-#ifdef UART_DE_PORT
-ISR( USART_TXC_vect ) {
-    UART_DE_ODBIERANIE;    // zablokuj nadajnik RS485
-}
-#endif
-
-// definiujemy funkcjê dodaj¹c¹ jeden bajtdoz bufora cyklicznego
-void uart_putc( char data ) {
-    uint8_t tmp_head;
-    ATOMIC_BLOCK( ATOMIC_RESTORESTATE ) {
-        tmp_head  = ( UART_TxHead + 1 ) & UART_TX_BUF_MASK;
-    }
-    // pêtla oczekuje je¿eli brak miejsca w buforze cyklicznym na kolejne znaki
-    while ( tmp_head == UART_TxTail ) {}
-
-    UART_TxBuf[tmp_head] = data;
-    UART_TxHead = tmp_head;
-
-    // inicjalizujemy przerwanie wystêpuj¹ce, gdy bufor jest pusty, dziêki
-    // czemu w dalszej czêœci wysy³aniem danych zajmie siê ju¿ procedura
-    // obs³ugi przerwania
-    UCSR0B |= ( 1 << UDRIE0 );
+	UART_TxBuf[tmp_head] = data;
+	UART_TxHead = tmp_head;
+	UCSR0B |= (1 << UDRIE0);
 }
 
-
-void uart_puts( char *s ) {    // wysy³a ³añcuch z pamiêci RAM na UART
-    register char c;
-    while (( c = *s++ ) ) uart_putc( c );       // dopóki nie napotkasz 0 wysy³aj znak
+void uart_puts(char *s) {    // funkcja wysy³aj¹ca ³añcuch z pamiêci RAM na UART
+	register char c;
+	while ((c = *s++))
+		uart_putc(c);
 }
 
-void uart_putint( int value, int radix ) { // wysy³a na port szeregowy tekst
-    char string[17];            // bufor na wynik funkcji itoa
-    itoa( value, string, radix );      // konwersja value na ASCII
-    uart_puts( string );          // wyœlij string na port szeregowy
+void uart_putint(int value, int base) { // wysy³a na port szeregowy tekst
+	char string[17];            // bufor na wynik funkcji itoa
+	itoa(value, string, base);      // konwersja value na ASCII
+	uart_puts(string);          // wys³anie ci¹gu znaków na port szeregowy
 }
 
+// procedura obs³ugi przerwania nadawczego, pobieraj¹ca dane z bufora cyklicznego
+ISR( USART_UDRE_vect) {
+	// sprawdzamy czy indeksy s¹ ró¿ne
+	if (UART_TxHead != UART_TxTail) {
 
-// definiujemy procedurê obs³ugi przerwania nadawczego, pobieraj¹c¹ dane z bufora cyklicznego
-ISR( USART_UDRE_vect )  {
-    // sprawdzamy czy indeksy s¹ ró¿ne
-    if ( UART_TxHead != UART_TxTail ) {
-        // obliczamy i zapamiêtujemy nowy indeks ogona wê¿a (mo¿e siê zrównaæ z g³ow¹)
-        UART_TxTail = ( UART_TxTail + 1 ) & UART_TX_BUF_MASK;
-        // zwracamy bajt pobrany z bufora  jako rezultat funkcji
-#ifdef UART_DE_PORT
-        UART_DE_NADAWANIE;
-#endif
-        UDR0 = UART_TxBuf[UART_TxTail];
-    } else {
-        // zerujemy flagê przerwania wystêpuj¹cego gdy bufor pusty
-        UCSR0B &= ~( 1 << UDRIE0 );
-    }
+		UART_TxTail = (UART_TxTail + 1) & UART_TX_BUF_MASK;
+
+		UDR0 = UART_TxBuf[UART_TxTail];
+	} else {
+		// zerowanie flagi przerwania wystêpuj¹cej gdy bufor pusty
+		UCSR0B &= ~(1 << UDRIE0);
+	}
 }
 
-
-// definiujemy funkcjê pobieraj¹c¹ jeden bajt z bufora cyklicznego
-int uart_getc( void ) {
-    int data = -1;
-    // sprawdzamy czy indeksy s¹ równe
-    if ( UART_RxHead == UART_RxTail ) return data;
-    ATOMIC_BLOCK( ATOMIC_RESTORESTATE ) {
-        // obliczamy i zapamiêtujemy nowy indeks „ogona wê¿a” (mo¿e siê zrównaæ z g³ow¹)
-        UART_RxTail = ( UART_RxTail + 1 ) & UART_RX_BUF_MASK;
-        // zwracamy bajt pobrany z bufora  jako rezultat funkcji
-        data = UART_RxBuf[UART_RxTail];
-    }
-    return data;
+// funkcja pobieraj¹c¹ jeden bajt z bufora cyklicznego
+int uart_getc(void) {
+	int data = -1;
+	// sprawdzamy czy indeksy s¹ równe
+	if (UART_RxHead == UART_RxTail)
+		return data;
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+	{
+		// obliczanie i przypisywanie nowego indeksu „ogona wê¿a”
+		UART_RxTail = (UART_RxTail + 1) & UART_RX_BUF_MASK;
+		// zwracany jest bajt pobrany z bufora  jako rezultat funkcji
+		data = UART_RxBuf[UART_RxTail];
+	}
+	return data;
 }
 
-char * uart_get_str( char * buf ) {
-    int c;
-    char * wsk = buf;
-    if ( ascii_line ) {
-        while (( c = uart_getc() ) ) {
-            if ( 13 == c || c < 0 ) break;
-            *buf++ = c;
-        }
-        *buf = 0;
-        ascii_line--;
-    }
-    return wsk;
+char * uart_get_str(char * buf) {
+	int c;
+	char * wsk = buf;
+	if (ascii_line) {
+		while ((c = uart_getc())) {
+			if (13 == c || c < 0)
+				break;
+			*buf++ = c;
+		}
+		*buf = 0;
+		ascii_line--;
+	}
+	return wsk;
 }
 
+// definicja procedury obs³ugi przerwania odbiorczego, zapisuj¹ca dane do bufora cyklicznego
+ISR( USART_RX_vect) {
 
+	register uint8_t tmp_head;
+	register char data;
 
-// definiujemy procedurê obs³ugi przerwania odbiorczego, zapisuj¹c¹ dane do bufora cyklicznego
-ISR( USART_RX_vect ) {
+	data = UDR0; //pobranie bezpoœrednio bajtu danych z bufora sprzêtowego
 
-    register uint8_t tmp_head;
-    register char data;
+	// obliczanie nowego indeksu „g³owy wê¿a”
+	tmp_head = (UART_RxHead + 1) & UART_RX_BUF_MASK;
 
-    data = UDR0; //pobieramy natychmiast bajt danych z bufora sprzêtowego
+	// sprawdzenie czy w¹¿ nie "zjada" w³asnego ogona
+	if (tmp_head == UART_RxTail) {
 
-    // obliczamy nowy indeks „g³owy wê¿a”
-    tmp_head = ( UART_RxHead + 1 ) & UART_RX_BUF_MASK;
+		UART_RxHead = UART_RxTail;
+	} else {
+		switch (data) {
+		case 0:                    // ignorujemy bajt = 0
+		case 10:
+			break;            // ignorujemy znak LF (koniec linii)
+		case 13:			 // zliczamy znak CR (rozpoczêcie nowej linii)
+			ascii_line++;    // sygnalizacja nowej kolejnej linii w buforze
 
-    // sprawdzamy, czy w¹¿ nie zacznie zjadaæ w³asnego ogona
-    if ( tmp_head == UART_RxTail ) {
+		default:
+			UART_RxHead = tmp_head;
+			UART_RxBuf[tmp_head] = data;
+		}
 
-        UART_RxHead = UART_RxTail;
-    } else {
-        switch ( data ) {
-        case 0:                    // ignorujemy bajt = 0
-        case 10:
-            break;            // ignorujemy znak LF
-        case 13:
-            ascii_line++;    // sygnalizujemy obecnoœæ kolejnej linii w buforze
-        default :
-            UART_RxHead = tmp_head;
-            UART_RxBuf[tmp_head] = data;
-        }
-
-    }
+	}
 }
